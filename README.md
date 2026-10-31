@@ -1,6 +1,6 @@
 # AMD optimization: DeepSeek-V4.1-Flash decode on one AMD Instinct GPU
 
-Status: 2026-10-31 15:00 UTC. This page is the live summary of the work. History is at the end.
+Status: 2026-10-31 15:45 UTC. This page is the live summary of the work. History is at the end.
 
 ## Goal
 
@@ -84,7 +84,24 @@ launches per layer, all users in one step, paged slot memory for contexts up to 
 Gates: per-layer parity against the old step (block injection, judged against the old step's own run-to-run noise),
 greedy output within the old engine's A/A envelope, Lucebox KL / top-1 within +0.005 / -0.005 of the heretic control.
 
-**Latest, 2026-10-31 15:00 UTC (decode step timing, varied prompts, MI355X, heretic weights).** core2 now uses a native
+**Real API, 2026-10-31 15:40 UTC** (MI355X, heretic weights, same binary with the old engine vs core2, interleaved
+ABAB, 8,964 requests, all OK; short essay prompts, 256 output tokens, greedy):
+
+| Users | Old engine | core2 | Gain |
+|---|---|---|---|
+| 1 | 118.1 tok/s | 144.2 tok/s | +21% |
+| 8 | 53.7 tok/s/user | **88.9 tok/s/user** | +63% |
+| 16 | 37.9 tok/s/user | 67.4 tok/s/user | +76% |
+| 32 | 18.3 tok/s/user | 51.4 tok/s/user | +179% |
+| 64 | 631 tok/s total | **2,270 tok/s total** | +258% |
+| 128 | 667 tok/s total | **3,113 tok/s total** | +365% |
+
+Caveat: these prompts are short (about 33 tokens, 16 topics), so attention is almost free and fewer experts are touched
+than with real traffic. An audit of all our test inputs found them too easy. We are building an agentic-coding workload
+(multi-turn, ~80K-token conversations, ~750 new tokens per turn, 220 output tokens) and real-text step benchmarks;
+expect lower numbers on those. The step timings below use word-list prompts and are also optimistic.
+
+**Decode step timing, 2026-10-31 15:00 UTC (varied word-list prompts, ~4K context).** core2 now uses a native
 MXFP4 expert kernel and puts prompt tokens into the shared decode step ("prompt rows"). Quality gates pass (KL / top-1 within
 0.005 of the heretic control); decode is bit-for-bit deterministic and batch-invariant (a request gives the same tokens alone
 or inside a batch of 128).
