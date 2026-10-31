@@ -1,6 +1,6 @@
 # AMD optimization: DeepSeek-V4.1-Flash decode on one AMD Instinct GPU
 
-Status: 2026-10-31 15:45 UTC. This page is the live summary of the work. History is at the end.
+Status: 2026-10-31 17:50 UTC. This page is the live summary of the work. History is at the end.
 
 ## Goal
 
@@ -84,7 +84,26 @@ launches per layer, all users in one step, paged slot memory for contexts up to 
 Gates: per-layer parity against the old step (block injection, judged against the old step's own run-to-run noise),
 greedy output within the old engine's A/A envelope, Lucebox KL / top-1 within +0.005 / -0.005 of the heretic control.
 
-**Real API, 2026-10-31 15:40 UTC** (MI355X, heretic weights, same binary with the old engine vs core2, interleaved
+**Real text, 2026-10-31 17:30 UTC (the numbers to trust).** An audit showed our earlier test prompts were too easy (word
+lists and 33-token essays touch far fewer experts than real text). New step benchmark: 256 real public documents (code,
+prose, multilingual, JSON, LaTeX, chat), uneven contexts of ~1K-32K tokens (mean ~6K), old engine vs core2, interleaved:
+
+| Users | Old engine ms/step | core2 ms/step | core2 speed |
+|---|---|---|---|
+| 1 | 11.97 | 7.08 | 141 tok/s |
+| 8 | 18.83 | 12.24 | 82 tok/s/user |
+| 16 | 26.19 | 17.59 | 57 tok/s/user |
+| 32 | 41.48 | 25.12 | 40 tok/s/user |
+| 64 | 64.26 | 36.89 | 1,735 tok/s total |
+| 128 | 98.94 | 53.83 | 2,378 tok/s total |
+
+Real text routes to 42 / 134 / 276 distinct experts per layer at 8 / 32 / 128 users (word lists: 37 / 86 / 147), so the
+expert read floor at 128 users is ~30 ms, not ~17. Since then: a new deterministic prefill is the default (time to first
+token ~3x shorter: 128K prompt 37.7 -> 11.9 s, 1M 391 -> 112 s; 8 users with 8K prompts 15.5 -> 7.1 s and +31% decode
+speed per user), plus several same-bits kernel changes. Agentic-coding benchmark (multi-turn ~80K-token conversations)
+and conversation-prefix reuse are in progress.
+
+**Real API, 2026-10-31 15:40 UTC (short prompts, optimistic)** (MI355X, heretic weights, same binary with the old engine vs core2, interleaved
 ABAB, 8,964 requests, all OK; short essay prompts, 256 output tokens, greedy):
 
 | Users | Old engine | core2 | Gain |
