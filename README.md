@@ -1,6 +1,6 @@
 # AMD optimization: DeepSeek-V4.1-Flash decode on one AMD Instinct GPU
 
-Status: 2026-10-31 (UTC). This page is the live summary of the work. History is at the end.
+Status: 2026-10-31 05:40 UTC. This page is the live summary of the work. History is at the end.
 
 ## Goal
 
@@ -69,6 +69,37 @@ dsx is 1.6-2.2x faster than our Maya fork at every width, before any of the work
 | Deterministic mode with "pair buffers" (each sum gets at most 2 adds onto +0, order-free) | all | < 0.5% cost; makes every quality gate exact |
 
 Lossy options (fewer experts per token, colder experts at lower bits) are listed but held until the owner approves them.
+
+## core2: the rewrite (since 2026-10-31)
+
+We stopped patching dsx's batched step and are rewriting the decode core ("core2") inside dsx, with a team of Claude
+agents (Opus / Sonnet): an architect/integrator, a reference-spec writer, a test-harness builder and six builders
+(experts; dense + head + router; attention + indexer + KV; hyper-connections + Engram; scheduler + memory + launcher;
+speculative-decoding rows). dsx's loader, formats, tokenizer, API and prefill stay.
+
+Design rules: a row's arithmetic never depends on how many rows share the step (batch-invariant, so verify rows equal
+plain rows), no float atomics (fixed-order sums, deterministic), one FP8 read of each weight (no BF16 twins), ~8 fused
+launches per layer, all users in one step, paged slot memory for contexts up to 1M tokens.
+
+Gates: per-layer parity against the old step (block injection, judged against the old step's own run-to-run noise),
+greedy output within the old engine's A/A envelope, Lucebox KL / top-1 within +0.005 / -0.005 of the heretic control.
+
+**Status 2026-10-31 05:40 UTC** (MI355X, heretic weights, 4K context, distinct prompts, old/new interleaved):
+hyper-connections, Engram, dense, head and attention are on by default; experts still use the old kernels.
+Quality gates pass (KL 0.0651 vs control 0.0638, top-1 0.9004 vs 0.8987).
+
+| Users | Old step | core2 step | Gain |
+|---|---|---|---|
+| 1 | 11.2-11.7 ms | 8.2-8.5 ms (121.5 tok/s) | +38% |
+| 8 | 17.9-18.5 ms | 15.4-15.8 ms (65 tok/s per user) | +17% |
+| 32 | 37.3-37.6 ms | 29.6-30.1 ms | +25% |
+| 128 | 91.9-94.4 ms | 70.1-71.8 ms (1,826 tok/s total) | +31% |
+
+Kernel launches per step: 1,050 -> 549. The new scheduler alone (all users in one step) gave +40% at 32 users and
++87% / +133% total throughput at 64 / 128 users through the API, before the new kernels. Speculative decoding on core2:
+1.3-3.5x at 1 user and 1.1-1.6x at 8-32 users on code and editing; off by default until it never loses on prose.
+Found on the way: the old top-k kernel picks wrong rows at long context; the new one matches an exact top-k.
+Next: the persistent expert kernel (already ~2x faster at 128 users, still slower at 1-8), which is half of every step.
 
 ## Bugs found by our reviews (being fixed)
 
