@@ -1,6 +1,6 @@
 # AMD optimization: DeepSeek-V4.1-Flash decode on one AMD Instinct GPU
 
-Status: 2026-10-31 11:20 UTC. This page is the live summary of the work. History is at the end.
+Status: 2026-10-31 15:00 UTC. This page is the live summary of the work. History is at the end.
 
 ## Goal
 
@@ -84,7 +84,26 @@ launches per layer, all users in one step, paged slot memory for contexts up to 
 Gates: per-layer parity against the old step (block injection, judged against the old step's own run-to-run noise),
 greedy output within the old engine's A/A envelope, Lucebox KL / top-1 within +0.005 / -0.005 of the heretic control.
 
-**Status 2026-10-31 11:20 UTC: reference, real API, varied prompts** (MI355X, heretic weights, same binary with the old
+**Latest, 2026-10-31 15:00 UTC (decode step timing, varied prompts, MI355X, heretic weights).** core2 now uses a native
+MXFP4 expert kernel and puts prompt tokens into the shared decode step ("prompt rows"). Quality gates pass (KL / top-1 within
+0.005 of the heretic control); decode is bit-for-bit deterministic and batch-invariant (a request gives the same tokens alone
+or inside a batch of 128).
+
+| Users | core2 ms per step | Speed |
+|---|---|---|
+| 1 | 7.4 | 135 tok/s |
+| 8 | 12.9 | 78 tok/s per user |
+| 16 | 17.6 | 57 tok/s per user |
+| 32 | 23.7 | 42 tok/s per user |
+| 64 | 33.9 | 1,887 tok/s total |
+| 128 | 50.9 | 2,517 tok/s total |
+
+The new expert kernel alone is 1.08-1.13x faster than the exact one at every width. A real-API table with these defaults is
+being measured. New prefill (in gates): 8K-token prompt 2.31 -> 0.80 s, 32K 9.4 -> 3.55 s, an 8K chunk at 1M depth
+2,073 -> 4,517 tok/s, and deterministic. At 8 users the step (12.9 ms) is about 2x the byte + launch floor (4.5-7.1 ms): it is
+now bound by dependent waits between kernels, not by memory bandwidth.
+
+**Earlier: 2026-10-31 11:20 UTC, reference, real API, varied prompts** (MI355X, heretic weights, same binary with the old
 engine vs core2, interleaved runs, warm repetitions; the new expert kernel is not yet on). Quality gates pass (KL and
 top-1 within 0.005 of the heretic control, greedy output inside the old engine's own run-to-run spread).
 
